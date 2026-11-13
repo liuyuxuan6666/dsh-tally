@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Minimal personal todo list for DeepSeek Harness",
+  "description": "Minimal personal todo list for DeepSeek Harness: in-place editing, due dates, notes, zero runtime dependencies.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -16,7 +16,8 @@
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "README.en.md"
   ],
   "dsh": {
     "bundle": {
@@ -27,5 +28,22 @@
       "immediately": true,
       "inject": []
     }
-  }
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "todo",
+    "task"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuyuxuan6666/dsh-tally.git"
+  },
+  "homepage": "https://github.com/liuyuxuan6666/dsh-tally#readme",
+  "bugs": {
+    "url": "https://github.com/liuyuxuan6666/dsh-tally/issues"
+  },
+  "author": "lyx6666"
 }
