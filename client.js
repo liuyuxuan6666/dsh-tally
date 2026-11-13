@@ -8,13 +8,16 @@
  * bare 20px stroke icon in the sidebar with no wrapper button, panel padding
  * 20/22, 13px body, 17px title, tokens only. Mobile keeps the same single
  * column: nothing here is desktop-only.
+ *
+ * Editing is in place, never modal: click the title to rename, click the date
+ * chip to pick a day, click the note chip to open a textarea under the row.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-tally',
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useCallback, useEffect, useMemo, useState } = React
+    const { useCallback, useEffect, useMemo, useRef, useState } = React
 
     let boundCtx = null
 
@@ -53,7 +56,13 @@ window.__ModuleLoader__.load({
       overdueCount: '项逾期',
       markDone: '标记完成',
       markUndone: '标记未完成',
-      loading: '加载中',
+      pickDate: '设置日期',
+      clearDate: '清除日期',
+      addNote: '详情',
+      notePlaceholder: '补充细节，⌘/Ctrl + Enter 保存，Esc 取消',
+      editTitle: '标题',
+      save: '保存',
+      cancel: '取消',
     }
 
     const EN = {
@@ -76,7 +85,13 @@ window.__ModuleLoader__.load({
       overdueCount: 'overdue',
       markDone: 'Mark as done',
       markUndone: 'Mark as not done',
-      loading: 'Loading',
+      pickDate: 'Set a date',
+      clearDate: 'Clear date',
+      addNote: 'Details',
+      notePlaceholder: 'Add details. ⌘/Ctrl + Enter saves, Esc cancels',
+      editTitle: 'Title',
+      save: 'Save',
+      cancel: 'Cancel',
     }
 
     function translator() {
@@ -104,6 +119,7 @@ window.__ModuleLoader__.load({
 
     const RADIUS = 8
     const ROW_MIN = 44
+    const FIELD_FONT = 14
 
     const S = {
       panel: {
@@ -159,7 +175,7 @@ window.__ModuleLoader__.load({
         minWidth: 0,
         height: 40,
         padding: '0 12px',
-        fontSize: 14,
+        fontSize: FIELD_FONT,
         borderRadius: RADIUS,
         border: `1px solid ${T.borderSoft}`,
         background: T.layer1,
@@ -214,17 +230,71 @@ window.__ModuleLoader__.load({
       },
       checkDone: { background: T.brand, borderColor: T.brand, color: '#fff' },
       body: { flex: 1, minWidth: 0 },
-      rowTitle: { fontSize: 14, lineHeight: 1.45, wordBreak: 'break-word' },
+      rowTitle: { fontSize: FIELD_FONT, lineHeight: 1.45, wordBreak: 'break-word', cursor: 'text' },
       rowTitleDone: {
-        fontSize: 14,
+        fontSize: FIELD_FONT,
         lineHeight: 1.45,
         wordBreak: 'break-word',
         color: T.tertiary,
         textDecoration: 'line-through',
+        cursor: 'text',
       },
-      meta: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 12, color: T.tertiary },
-      due: { color: T.sub },
-      dueOverdue: { color: T.error },
+      titleInput: {
+        width: '100%',
+        boxSizing: 'border-box',
+        fontSize: FIELD_FONT,
+        lineHeight: 1.45,
+        fontFamily: 'inherit',
+        color: T.text,
+        background: T.layer1,
+        border: `1px solid ${T.brand}`,
+        borderRadius: 6,
+        padding: '2px 6px',
+        margin: '-2px -6px',
+        outline: 'none',
+      },
+      meta: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 },
+      chip: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        height: 22,
+        padding: '0 7px',
+        borderRadius: 6,
+        border: `1px solid ${T.borderSoft}`,
+        background: 'transparent',
+        color: T.sub,
+        fontSize: 12,
+        lineHeight: 1,
+        cursor: 'pointer',
+      },
+      chipGhost: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        height: 22,
+        padding: '0 7px',
+        borderRadius: 6,
+        border: '1px dashed transparent',
+        background: 'transparent',
+        color: T.tertiary,
+        fontSize: 12,
+        lineHeight: 1,
+        cursor: 'pointer',
+      },
+      chipOverdue: { color: T.error, borderColor: T.error },
+      dateInput: {
+        height: 24,
+        padding: '0 6px',
+        fontSize: 12,
+        fontFamily: 'inherit',
+        color: T.text,
+        background: T.layer1,
+        border: `1px solid ${T.border}`,
+        borderRadius: 6,
+        outline: 'none',
+        colorScheme: 'light dark',
+      },
       tag: {
         padding: '0 6px',
         borderRadius: 4,
@@ -233,8 +303,32 @@ window.__ModuleLoader__.load({
         fontSize: 11,
         lineHeight: '18px',
       },
-      note: { color: T.tertiary, fontSize: 12, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-      actions: { display: 'flex', gap: 2, flex: 'none', opacity: 0.6 },
+      note: {
+        color: T.tertiary,
+        fontSize: 12,
+        marginTop: 3,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        cursor: 'text',
+      },
+      noteInput: {
+        width: '100%',
+        boxSizing: 'border-box',
+        minHeight: 56,
+        marginTop: 6,
+        padding: '6px 8px',
+        fontSize: 12,
+        fontFamily: 'inherit',
+        lineHeight: 1.5,
+        color: T.text,
+        background: T.layer1,
+        border: `1px solid ${T.border}`,
+        borderRadius: 6,
+        outline: 'none',
+        resize: 'vertical',
+      },
+      actions: { display: 'flex', gap: 2, flex: 'none', opacity: 0.55 },
       iconBtn: {
         width: 28,
         height: 28,
@@ -265,17 +359,6 @@ window.__ModuleLoader__.load({
         border: `1px solid ${T.error}`,
         background: 'transparent',
         color: T.error,
-        fontSize: 12,
-      },
-      doneToggle: {
-        marginTop: 20,
-        width: '100%',
-        minHeight: 40,
-        borderRadius: RADIUS,
-        border: `1px solid ${T.borderSoft}`,
-        background: 'transparent',
-        color: T.sub,
-        cursor: 'pointer',
         fontSize: 12,
       },
       dockChip: {
@@ -357,12 +440,10 @@ window.__ModuleLoader__.load({
         h('path', { d: 'M13 15.5h7' }))
     }
 
-    /** Sidebar entry: a bare glyph. The host owns the button, the active state, and the click. */
     function SidebarEntry() {
       return h(TallyGlyph, null)
     }
 
-    /** Composer chip: a second, always-reachable way in (path lives in its own slot). */
     function DockChip() {
       const t = translator()
       return h('button', {
@@ -379,8 +460,157 @@ window.__ModuleLoader__.load({
       }, h(TallyGlyph, { size: 13 }), t('title'))
     }
 
-    function Row({ item, today, t, onToggle, onRemove, onArchive }) {
+    /**
+     * One row. Three in-place editors share the row:
+     *   title — click the text, Enter saves, Esc cancels
+     *   date  — click the date chip (or the dashed placeholder) to open a picker
+     *   note  — click the details chip to open a textarea under the row
+     * Local draft state survives the panel's 20s poll, so typing is never clobbered.
+     */
+    function Row({ item, today, t, onToggle, onRemove, onArchive, onSave }) {
+      const [editingTitle, setEditingTitle] = useState(false)
+      const [titleDraft, setTitleDraft] = useState(item.title)
+      const [pickingDate, setPickingDate] = useState(false)
+      const [editingNote, setEditingNote] = useState(false)
+      const [noteDraft, setNoteDraft] = useState(item.note || '')
+      const titleRef = useRef(null)
+      const dateRef = useRef(null)
+      const noteRef = useRef(null)
+      // Enter commits, then the input unmounts and its blur fires a second time.
+      // One commit per edit session, reset when the editor opens.
+      const titleDone = useRef(false)
+      const dateDone = useRef(false)
+      const noteDone = useRef(false)
+
+      useEffect(() => {
+        if (editingTitle && titleRef.current) {
+          titleRef.current.focus()
+          titleRef.current.select()
+        }
+      }, [editingTitle])
+
+      useEffect(() => {
+        if (pickingDate && dateRef.current) {
+          dateRef.current.focus()
+          try {
+            dateRef.current.showPicker?.()
+          } catch {}
+        }
+      }, [pickingDate])
+
+      useEffect(() => {
+        if (editingNote && noteRef.current) noteRef.current.focus()
+      }, [editingNote])
+
+      const commitTitle = () => {
+        if (titleDone.current) return
+        titleDone.current = true
+        const next = titleDraft.trim()
+        setEditingTitle(false)
+        if (!next || next === item.title) {
+          setTitleDraft(item.title)
+          return
+        }
+        onSave(item.id, { title: next })
+      }
+
+      const commitDue = (value) => {
+        if (dateDone.current) return
+        dateDone.current = true
+        setPickingDate(false)
+        const next = /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : null
+        if ((item.due ?? null) === next) return
+        onSave(item.id, { due: next ?? '' })
+      }
+
+      const commitNote = () => {
+        if (noteDone.current) return
+        noteDone.current = true
+        setEditingNote(false)
+        const next = noteDraft.trim()
+        if ((item.note || '').trim() === next) return
+        onSave(item.id, { note: next })
+      }
+
       const overdue = !item.done && item.due && item.due < today
+
+      const titleEl = editingTitle
+        ? h('input', {
+            ref: titleRef,
+            style: S.titleInput,
+            value: titleDraft,
+            'aria-label': t('editTitle'),
+            onChange: (e) => setTitleDraft(e.target.value),
+            onBlur: commitTitle,
+            onKeyDown: (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitTitle()
+              } else if (e.key === 'Escape') {
+                setTitleDraft(item.title)
+                setEditingTitle(false)
+              }
+            },
+          })
+        : h('div', {
+            style: item.done ? S.rowTitleDone : S.rowTitle,
+            title: t('editTitle'),
+            onClick: () => {
+              titleDone.current = false
+              setTitleDraft(item.title)
+              setEditingTitle(true)
+            },
+          }, item.title)
+
+      const dateEl = pickingDate
+        ? h('input', {
+            ref: dateRef,
+            type: 'date',
+            style: S.dateInput,
+            defaultValue: item.due || '',
+            'aria-label': t('pickDate'),
+            onChange: (e) => commitDue(e.target.value),
+            onBlur: (e) => commitDue(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key === 'Escape') setPickingDate(false)
+            },
+          })
+        : h('button', {
+            type: 'button',
+            style: item.due ? { ...S.chip, ...(overdue ? S.chipOverdue : null) } : S.chipGhost,
+            title: item.due ? t('clearDate') : t('pickDate'),
+            onClick: () => {
+              dateDone.current = false
+              setPickingDate(true)
+            },
+            onContextMenu: (e) => {
+              if (!item.due) return
+              e.preventDefault()
+              onSave(item.id, { due: '' })
+            },
+          }, item.due ? shortDate(item.due, today) : `＋ ${t('pickDate')}`)
+
+      const noteEl = editingNote
+        ? h('textarea', {
+            ref: noteRef,
+            style: S.noteInput,
+            value: noteDraft,
+            placeholder: t('notePlaceholder'),
+            'aria-label': t('addNote'),
+            onChange: (e) => setNoteDraft(e.target.value),
+            onBlur: commitNote,
+            onKeyDown: (e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                commitNote()
+              } else if (e.key === 'Escape') {
+                setNoteDraft(item.note || '')
+                setEditingNote(false)
+              }
+            },
+          })
+        : null
+
       return h('div', { style: S.row },
         h('button', {
           type: 'button',
@@ -391,13 +621,33 @@ window.__ModuleLoader__.load({
           onClick: () => onToggle(item),
         }, item.done ? h(CheckGlyph) : null),
         h('div', { style: S.body },
-          h('div', { style: item.done ? S.rowTitleDone : S.rowTitle }, item.title),
-          item.note ? h('div', { style: S.note, title: item.note }, item.note) : null,
-          (item.due || item.tags.length)
-            ? h('div', { style: S.meta },
-                item.due ? h('span', { style: overdue ? S.dueOverdue : S.due }, shortDate(item.due, today)) : null,
-                item.tags.map((tag) => h('span', { key: tag, style: S.tag }, `#${tag}`)))
-            : null),
+          titleEl,
+          h('div', { style: S.meta },
+            dateEl,
+            h('button', {
+              type: 'button',
+              style: item.note ? S.chip : S.chipGhost,
+              title: t('addNote'),
+              onClick: () => {
+                noteDone.current = false
+                setNoteDraft(item.note || '')
+                setEditingNote(true)
+              },
+            }, item.note ? t('addNote') : `＋ ${t('addNote')}`),
+            item.tags.map((tag) => h('span', { key: tag, style: S.tag }, `#${tag}`))),
+          editingNote
+            ? noteEl
+            : item.note
+              ? h('div', {
+                  style: S.note,
+                  title: item.note,
+                  onClick: () => {
+                    noteDone.current = false
+                    setNoteDraft(item.note || '')
+                    setEditingNote(true)
+                  },
+                }, item.note)
+              : null),
         h('div', { style: S.actions },
           item.done
             ? h('button', { type: 'button', style: S.iconBtn, title: t('archive'), 'aria-label': t('archive'), onClick: () => onArchive(item) }, '⌫')
@@ -450,6 +700,8 @@ window.__ModuleLoader__.load({
         [reload],
       )
 
+      const save = useCallback((id, patch) => run('update', { id, ...patch }), [run])
+
       const today = (state && state.today) || new Date().toLocaleDateString('sv-SE')
       const items = ((state && state.items) || []).filter((i) => !i.archived)
       const stats = (state && state.stats) || { active: 0, overdue: 0 }
@@ -464,6 +716,17 @@ window.__ModuleLoader__.load({
         run('add', { title })
       }
 
+      const rowProps = (item) => ({
+        key: item.id,
+        item,
+        today,
+        t,
+        onSave: save,
+        onToggle: (it) => run(it.done ? 'undo' : 'done', { id: it.id }),
+        onRemove: (it) => run('remove', { id: it.id }),
+        onArchive: (it) => run('archive', { id: it.id }),
+      })
+
       const sections = []
       for (const key of [0, 1, 2, 3, 4]) {
         const list = grouped.get(key)
@@ -473,16 +736,7 @@ window.__ModuleLoader__.load({
             h('div', { style: S.groupLabel },
               t(BUCKET_LABEL[key]),
               h('span', { style: S.groupCount }, list.length)),
-            list.map((item) =>
-              h(Row, {
-                key: item.id,
-                item,
-                today,
-                t,
-                onToggle: (it) => run(it.done ? 'undo' : 'done', { id: it.id }),
-                onRemove: (it) => run('remove', { id: it.id }),
-                onArchive: (it) => run('archive', { id: it.id }),
-              }))),
+            list.map((item) => h(Row, rowProps(item)))),
         )
       }
 
@@ -531,21 +785,10 @@ window.__ModuleLoader__.load({
           sections,
           done.length
             ? h('div', null,
-                h('div', { style: S.groupLabel, marginTop: 22 },
+                h('div', { style: { ...S.groupLabel, marginTop: 22 } },
                   t('done'),
                   h('span', { style: S.groupCount }, done.length)),
-                showDone
-                  ? done.map((item) =>
-                      h(Row, {
-                        key: item.id,
-                        item,
-                        today,
-                        t,
-                        onToggle: (it) => run('undo', { id: it.id }),
-                        onRemove: (it) => run('remove', { id: it.id }),
-                        onArchive: (it) => run('archive', { id: it.id }),
-                      }))
-                  : null)
+                showDone ? done.map((item) => h(Row, rowProps(item))) : null)
             : null,
         ),
       )
