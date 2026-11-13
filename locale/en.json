@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "title": "Todo",
+    "description": "A minimal personal todo list: add, check off, due dates, archive and reminders."
+  },
+  "ui": {
+    "title": "Todo",
+    "addPlaceholder": "Add a task, press Enter",
+    "empty": "Nothing to do",
+    "today": "Today",
+    "overdue": "Overdue",
+    "week": "This week",
+    "later": "Later",
+    "noDate": "No date",
+    "done": "Completed",
+    "hidden": "Hidden",
+    "showDone": "Show completed",
+    "hideDone": "Hide completed",
+    "archive": "Archive",
+    "restore": "Restore",
+    "delete": "Delete",
+    "markDone": "Mark done",
+    "markUndone": "Mark not done"
+  }
+}

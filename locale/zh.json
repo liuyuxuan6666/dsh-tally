@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "title": "待办",
+    "description": "极简个人待办清单：添加、勾选、截止日期、归档与提醒。"
+  },
+  "ui": {
+    "title": "待办",
+    "addPlaceholder": "添加一条，回车确认",
+    "empty": "暂时没有待办",
+    "today": "今天",
+    "overdue": "逾期",
+    "week": "本周",
+    "later": "以后",
+    "noDate": "无日期",
+    "done": "已完成",
+    "hidden": "已隐藏",
+    "showDone": "显示已完成",
+    "hideDone": "隐藏已完成",
+    "archive": "归档",
+    "restore": "恢复",
+    "delete": "删除",
+    "markDone": "标记完成",
+    "markUndone": "标记未完成"
+  }
+}
