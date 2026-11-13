@@ -3,7 +3,11 @@
  *
  * One sidebar entry and one central panel. The panel reads /api/todo/state and
  * writes through /api/todo/op, both served by the Host half in index.js.
- * Layout is mobile-first on purpose: a single column, 48px rows, no overlays.
+ *
+ * House style follows the panels already in this harness (AIHOT radar, 记忆宫殿):
+ * bare 20px stroke icon in the sidebar with no wrapper button, panel padding
+ * 20/22, 13px body, 17px title, tokens only. Mobile keeps the same single
+ * column: nothing here is desktop-only.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-tally',
@@ -14,190 +18,279 @@ window.__ModuleLoader__.load({
 
     let boundCtx = null
 
-    // ------------------------------------------------------------------ i18n
+    /**
+     * Report a render failure to the host. Reading a service that was not
+     * injected throws, and a throwing slot entry is silently abdicated, so this
+     * is the only way a broken view leaves a trace.
+     */
+    const report = (stage, detail) => {
+      try {
+        const q = new URLSearchParams({ stage })
+        if (detail !== undefined && detail !== null) q.set('detail', String(detail).slice(0, 800))
+        fetch(`/api/todo/clientlog?${q}`).catch(() => {})
+      } catch {}
+    }
+
+    // ------------------------------------------------------------------ text
 
     const ZH = {
       title: '待办',
-      addPlaceholder: '添加一条，回车确认',
-      empty: '暂时没有待办',
+      addPlaceholder: '添加待办，回车确认',
+      add: '添加',
+      emptyTitle: '暂时没有待办',
+      emptyHint: '在上方输入一条，回车即可添加',
       overdue: '逾期',
       today: '今天',
       week: '本周',
       later: '以后',
       noDate: '无日期',
       done: '已完成',
-      showDone: '显示已完成',
-      hideDone: '隐藏已完成',
+      showDone: '已完成',
+      hideDone: '收起已完成',
       archive: '归档',
       delete: '删除',
-      active: '活跃',
+      active: '项待办',
+      overdueCount: '项逾期',
+      markDone: '标记完成',
+      markUndone: '标记未完成',
+      loading: '加载中',
+    }
+
+    const EN = {
+      title: 'Todo',
+      addPlaceholder: 'Add a todo, press Enter',
+      add: 'Add',
+      emptyTitle: 'Nothing to do',
+      emptyHint: 'Type above and press Enter to add one',
+      overdue: 'Overdue',
+      today: 'Today',
+      week: 'This week',
+      later: 'Later',
+      noDate: 'No date',
+      done: 'Completed',
+      showDone: 'Completed',
+      hideDone: 'Hide completed',
+      archive: 'Archive',
+      delete: 'Delete',
+      active: 'open',
+      overdueCount: 'overdue',
+      markDone: 'Mark as done',
+      markUndone: 'Mark as not done',
+      loading: 'Loading',
     }
 
     function translator() {
-      const locale = boundCtx && boundCtx.locale
-      const canTranslate = Boolean(locale && typeof locale.t === 'function')
-      return (key) => {
-        if (canTranslate) {
-          const text = locale.t(`todo.ui.${key}`)
-          if (text && text !== `todo.ui.${key}`) return text
-        }
-        return ZH[key] ?? key
-      }
+      const lang = (typeof navigator !== 'undefined' && navigator.language) || 'zh-CN'
+      const dict = lang.toLowerCase().startsWith('zh') ? ZH : EN
+      return (key) => dict[key] ?? key
     }
 
-    // ---------------------------------------------------------------- styles
+    // --------------------------------------------------------------- tokens
 
-    const T = (name, fallback) => `var(--dsw-alias-${name}, ${fallback})`
+    const T = {
+      text: 'var(--dsw-alias-label-primary, #e8e8ea)',
+      sub: 'var(--dsw-alias-label-secondary, #a0a0a8)',
+      tertiary: 'var(--dsw-alias-label-tertiary, #6e6e78)',
+      base: 'var(--dsw-alias-bg-base, #0e0e11)',
+      layer1: 'var(--dsw-alias-bg-layer-1, #1a1a1f)',
+      layer2: 'var(--dsw-alias-bg-layer-2, #232329)',
+      border: 'var(--dsw-alias-border-l2, #2e2e36)',
+      borderSoft: 'var(--dsw-alias-border-l1, #26262c)',
+      brand: 'var(--dsw-alias-brand-primary, #5b8cff)',
+      hover: 'var(--dsw-alias-interactive-bg-hover, #2a2a32)',
+      error: 'var(--dsw-alias-state-error-primary, #ff4d4f)',
+      success: 'var(--dsw-alias-state-success-primary, #34c759)',
+    }
+
+    const RADIUS = 8
+    const ROW_MIN = 44
 
     const S = {
       panel: {
+        boxSizing: 'border-box',
         height: '100%',
         overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        background: T('bg-base', '#fff'),
-        color: T('label-primary', '#1a1a1c'),
-        font: `15px/1.5 ${T('font-family', 'system-ui, -apple-system, "Segoe UI", sans-serif')}`,
+        background: T.base,
+        color: T.text,
+        fontSize: 13,
+        lineHeight: 1.6,
+        padding: '20px 22px 64px',
       },
-      page: {
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '16px 16px 96px',
-        boxSizing: 'border-box',
-      },
-      header: {
+      inner: { maxWidth: 720, margin: '0 auto' },
+      head: {
         display: 'flex',
-        alignItems: 'baseline',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
         gap: 12,
-        padding: '4px 0 12px',
-        position: 'sticky',
-        top: 0,
-        zIndex: 2,
-        background: T('bg-base', '#fff'),
+        marginBottom: 16,
       },
-      h1: { fontSize: 22, fontWeight: 650, margin: 0 },
-      stats: { fontSize: 13, color: T('label-secondary', 'rgba(0,0,0,.58)') },
-      composer: { display: 'flex', gap: 8, marginBottom: 20 },
+      titleWrap: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
+      badge: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: `1px solid ${T.border}`,
+        background: T.layer1,
+        color: T.brand,
+        flex: 'none',
+      },
+      h1: { fontSize: 17, fontWeight: 650, margin: 0, letterSpacing: '0.2px' },
+      sub: { color: T.tertiary, fontSize: 12, margin: '2px 0 0' },
+      ghostBtn: {
+        fontSize: 12,
+        padding: '6px 14px',
+        borderRadius: RADIUS,
+        border: `1px solid ${T.border}`,
+        background: T.layer1,
+        color: T.sub,
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        flex: 'none',
+        whiteSpace: 'nowrap',
+      },
+      composer: { display: 'flex', gap: 8, marginBottom: 4 },
       input: {
         flex: 1,
         minWidth: 0,
-        height: 48,
-        padding: '0 14px',
-        fontSize: 16,
-        borderRadius: 12,
-        border: `1px solid ${T('border-l1', 'rgba(0,0,0,.16)')}`,
-        background: T('bg-layer-1', '#f7f7f8'),
-        color: 'inherit',
+        height: 40,
+        padding: '0 12px',
+        fontSize: 14,
+        borderRadius: RADIUS,
+        border: `1px solid ${T.borderSoft}`,
+        background: T.layer1,
+        color: T.text,
         outline: 'none',
         boxSizing: 'border-box',
       },
       addBtn: {
-        height: 48,
-        padding: '0 18px',
-        fontSize: 15,
-        fontWeight: 600,
-        borderRadius: 12,
-        border: 'none',
-        background: T('state-business-primary', '#2f6fe0'),
-        color: '#fff',
-        cursor: 'pointer',
-      },
-      groupTitle: {
+        height: 40,
+        padding: '0 16px',
         fontSize: 13,
         fontWeight: 600,
-        letterSpacing: '.02em',
-        color: T('label-secondary', 'rgba(0,0,0,.58)'),
-        margin: '18px 0 6px',
-        textTransform: 'none',
+        borderRadius: RADIUS,
+        border: 'none',
+        background: T.brand,
+        color: '#fff',
+        cursor: 'pointer',
+        flex: 'none',
       },
+      groupLabel: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: T.tertiary,
+        margin: '18px 0 2px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      },
+      groupCount: { fontWeight: 400, color: T.tertiary, opacity: 0.75 },
       row: {
         display: 'flex',
         alignItems: 'flex-start',
-        gap: 12,
-        minHeight: 48,
-        padding: '10px 4px',
-        borderBottom: `1px solid ${T('border-l1', 'rgba(0,0,0,.08)')}`,
+        gap: 10,
+        minHeight: ROW_MIN,
+        padding: '10px 0',
+        borderBottom: `1px solid ${T.borderSoft}`,
       },
-      checkbox: {
-        width: 26,
-        height: 26,
+      check: {
+        width: 20,
+        height: 20,
         marginTop: 2,
-        flex: '0 0 auto',
-        borderRadius: 8,
-        border: `2px solid ${T('border-l1', 'rgba(0,0,0,.28)')}`,
+        flex: 'none',
+        borderRadius: 6,
+        border: `1.5px solid ${T.border}`,
+        background: 'transparent',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         cursor: 'pointer',
-        background: 'transparent',
-        color: 'inherit',
         padding: 0,
+        color: 'transparent',
       },
+      checkDone: { background: T.brand, borderColor: T.brand, color: '#fff' },
       body: { flex: 1, minWidth: 0 },
-      title: { fontSize: 16, wordBreak: 'break-word' },
-      titleDone: {
-        fontSize: 16,
+      rowTitle: { fontSize: 14, lineHeight: 1.45, wordBreak: 'break-word' },
+      rowTitleDone: {
+        fontSize: 14,
+        lineHeight: 1.45,
         wordBreak: 'break-word',
+        color: T.tertiary,
         textDecoration: 'line-through',
-        opacity: 0.5,
       },
-      meta: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginTop: 3,
-        fontSize: 12,
-        color: T('label-secondary', 'rgba(0,0,0,.58)'),
-      },
-      dueBadge: (overdue) => ({
-        padding: '1px 7px',
-        borderRadius: 999,
-        background: overdue ? 'rgba(220,60,60,.12)' : T('bg-layer-1', 'rgba(0,0,0,.05)'),
-        color: overdue ? '#c0392b' : 'inherit',
-      }),
+      meta: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 12, color: T.tertiary },
+      due: { color: T.sub },
+      dueOverdue: { color: T.error },
       tag: {
-        padding: '1px 7px',
-        borderRadius: 999,
-        background: T('bg-layer-1', 'rgba(0,0,0,.05)'),
+        padding: '0 6px',
+        borderRadius: 4,
+        background: T.layer2,
+        color: T.sub,
+        fontSize: 11,
+        lineHeight: '18px',
       },
-      actions: { display: 'flex', gap: 4, flex: '0 0 auto' },
+      note: { color: T.tertiary, fontSize: 12, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      actions: { display: 'flex', gap: 2, flex: 'none', opacity: 0.6 },
       iconBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 9,
+        width: 28,
+        height: 28,
+        borderRadius: 6,
         border: 'none',
         background: 'transparent',
-        color: T('label-secondary', 'rgba(0,0,0,.5)'),
+        color: T.tertiary,
         cursor: 'pointer',
         fontSize: 15,
+        lineHeight: 1,
+        padding: 0,
       },
       empty: {
-        padding: '48px 0',
-        textAlign: 'center',
-        color: T('label-secondary', 'rgba(0,0,0,.5)'),
-      },
-      toggleDone: {
-        marginTop: 22,
-        width: '100%',
-        minHeight: 44,
-        borderRadius: 10,
-        border: `1px solid ${T('border-l1', 'rgba(0,0,0,.12)')}`,
-        background: 'transparent',
-        color: T('label-secondary', 'rgba(0,0,0,.6)'),
-        cursor: 'pointer',
-        fontSize: 14,
-      },
-      sidebarBtn: {
-        width: 34,
-        height: 34,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
-        border: 'none',
-        borderRadius: 9,
+        gap: 6,
+        padding: '56px 0 48px',
+        color: T.tertiary,
+        textAlign: 'center',
+      },
+      emptyTitle: { fontSize: 14, color: T.sub },
+      emptyHint: { fontSize: 12 },
+      err: {
+        margin: '10px 0 0',
+        padding: '8px 12px',
+        borderRadius: RADIUS,
+        border: `1px solid ${T.error}`,
         background: 'transparent',
-        color: 'inherit',
+        color: T.error,
+        fontSize: 12,
+      },
+      doneToggle: {
+        marginTop: 20,
+        width: '100%',
+        minHeight: 40,
+        borderRadius: RADIUS,
+        border: `1px solid ${T.borderSoft}`,
+        background: 'transparent',
+        color: T.sub,
         cursor: 'pointer',
-        padding: 0,
+        fontSize: 12,
+      },
+      dockChip: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        height: 24,
+        padding: '0 10px',
+        borderRadius: 999,
+        border: `1px solid ${T.borderSoft}`,
+        background: 'transparent',
+        color: T.sub,
+        fontSize: 12,
+        cursor: 'pointer',
+        lineHeight: 1,
       },
     }
 
@@ -226,10 +319,9 @@ window.__ModuleLoader__.load({
 
     function bucketOf(item, today) {
       if (!item.due) return 4
-      const d = item.due
-      if (d < today) return 0
-      if (d === today) return 1
-      const diff = Math.round((new Date(`${d}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000)
+      if (item.due < today) return 0
+      if (item.due === today) return 1
+      const diff = Math.round((new Date(`${item.due}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000)
       return diff <= 7 ? 2 : 3
     }
 
@@ -249,55 +341,67 @@ window.__ModuleLoader__.load({
       return out
     }
 
-    // ----------------------------------------------------------- components
+    // ------------------------------------------------------------ components
 
-    function CheckIcon() {
-      return h('svg', { viewBox: '0 0 16 16', width: 14, height: 14, fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' },
+    function CheckGlyph({ size = 12 }) {
+      return h('svg', { viewBox: '0 0 16 16', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M2.5 8.5l3.5 3.5 7-8' }))
     }
 
-    function TodoGlyph() {
-      return h('svg', { viewBox: '0 0 24 24', width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
-        h('rect', { x: 3.5, y: 3, width: 17, height: 18, rx: 3 }),
-        h('path', { d: 'M7 8.5l1.6 1.6L11.5 7' }),
-        h('path', { d: 'M7 15.5l1.6 1.6L11.5 14' }),
-        h('path', { d: 'M14 9.5h3.5' }),
-        h('path', { d: 'M14 16.5h3.5' }))
+    /** The checklist mark, drawn at 20px like the other sidebar entries. */
+    function TallyGlyph({ size = 20 }) {
+      return h('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        h('path', { d: 'M4 7l2.2 2.2L10 5.4' }),
+        h('path', { d: 'M4 15l2.2 2.2L10 13.4' }),
+        h('path', { d: 'M13 7.5h7' }),
+        h('path', { d: 'M13 15.5h7' }))
     }
 
+    /** Sidebar entry: a bare glyph. The host owns the button, the active state, and the click. */
     function SidebarEntry() {
+      return h(TallyGlyph, null)
+    }
+
+    /** Composer chip: a second, always-reachable way in (path lives in its own slot). */
+    function DockChip() {
       const t = translator()
       return h('button', {
         type: 'button',
-        style: S.sidebarBtn,
+        style: S.dockChip,
         title: t('title'),
-        'aria-label': t('title'),
-        onClick: () => boundCtx?.layout?.selectPanel?.('todo'),
-      }, h(TodoGlyph))
+        onClick: () => {
+          try {
+            boundCtx?.layout?.selectPanel?.('todo')
+          } catch (error) {
+            report('dock:select-failed', error && error.message)
+          }
+        },
+      }, h(TallyGlyph, { size: 13 }), t('title'))
     }
 
-    function Row({ item, today, onToggle, onRemove, onArchive }) {
-      const t = translator()
+    function Row({ item, today, t, onToggle, onRemove, onArchive }) {
       const overdue = !item.done && item.due && item.due < today
       return h('div', { style: S.row },
         h('button', {
           type: 'button',
-          style: { ...S.checkbox, ...(item.done ? { background: T('state-business-primary', '#2f6fe0'), borderColor: T('state-business-primary', '#2f6fe0'), color: '#fff' } : null) },
+          style: { ...S.check, ...(item.done ? S.checkDone : null) },
           title: item.done ? t('markUndone') : t('markDone'),
           'aria-label': item.done ? t('markUndone') : t('markDone'),
           'aria-pressed': item.done,
           onClick: () => onToggle(item),
-        }, item.done ? h(CheckIcon) : null),
+        }, item.done ? h(CheckGlyph) : null),
         h('div', { style: S.body },
-          h('div', { style: item.done ? S.titleDone : S.title }, item.title),
-          (item.due || item.tags.length || item.note)
+          h('div', { style: item.done ? S.rowTitleDone : S.rowTitle }, item.title),
+          item.note ? h('div', { style: S.note, title: item.note }, item.note) : null,
+          (item.due || item.tags.length)
             ? h('div', { style: S.meta },
-                item.due ? h('span', { style: S.dueBadge(overdue) }, shortDate(item.due, today)) : null,
-                item.tags.map((tag) => h('span', { key: tag, style: S.tag }, `#${tag}`)),
-                item.note ? h('span', { style: { opacity: 0.75 } }, item.note.length > 40 ? `${item.note.slice(0, 40)}…` : item.note) : null)
+                item.due ? h('span', { style: overdue ? S.dueOverdue : S.due }, shortDate(item.due, today)) : null,
+                item.tags.map((tag) => h('span', { key: tag, style: S.tag }, `#${tag}`)))
             : null),
         h('div', { style: S.actions },
-          item.done ? h('button', { type: 'button', style: S.iconBtn, title: t('archive'), 'aria-label': t('archive'), onClick: () => onArchive(item) }, '⌫') : null,
+          item.done
+            ? h('button', { type: 'button', style: S.iconBtn, title: t('archive'), 'aria-label': t('archive'), onClick: () => onArchive(item) }, '⌫')
+            : null,
           h('button', { type: 'button', style: S.iconBtn, title: t('delete'), 'aria-label': t('delete'), onClick: () => onRemove(item) }, '×')))
     }
 
@@ -314,35 +418,44 @@ window.__ModuleLoader__.load({
           setState(await fetchState())
           setError('')
         } catch (e) {
-          setError(String(e.message || e))
+          setError(String((e && e.message) || e))
         }
       }, [])
 
       useEffect(() => {
         let alive = true
-        const tick = () => { if (alive) reload() }
+        const tick = () => {
+          if (alive) reload()
+        }
         tick()
         const timer = setInterval(tick, 20000)
-        return () => { alive = false; clearInterval(timer) }
-      }, [reload])
-
-      const run = useCallback(async (op, payload) => {
-        setBusy(true)
-        try {
-          await api(op, payload)
-          await reload()
-        } catch (e) {
-          setError(String(e.message || e))
-        } finally {
-          setBusy(false)
+        return () => {
+          alive = false
+          clearInterval(timer)
         }
       }, [reload])
 
-      const today = state?.today || new Date().toLocaleDateString('sv-SE')
-      const items = (state?.items || []).filter((i) => !i.archived)
-      const stats = state?.stats || { active: 0, overdue: 0 }
+      const run = useCallback(
+        async (op, payload) => {
+          setBusy(true)
+          try {
+            await api(op, payload)
+            await reload()
+          } catch (e) {
+            setError(String((e && e.message) || e))
+          } finally {
+            setBusy(false)
+          }
+        },
+        [reload],
+      )
+
+      const today = (state && state.today) || new Date().toLocaleDateString('sv-SE')
+      const items = ((state && state.items) || []).filter((i) => !i.archived)
+      const stats = (state && state.stats) || { active: 0, overdue: 0 }
       const grouped = useMemo(() => group(items, today), [items, today])
       const done = useMemo(() => items.filter((i) => i.done).slice(0, 30), [items])
+      const openCount = items.filter((i) => !i.done).length
 
       const submit = () => {
         const title = draft.trim()
@@ -357,63 +470,109 @@ window.__ModuleLoader__.load({
         if (!list || !list.length) continue
         sections.push(
           h('div', { key: `g${key}` },
-            h('div', { style: S.groupTitle }, t(BUCKET_LABEL[key])),
-            list.map((item) => h(Row, {
-              key: item.id, item, today,
-              onToggle: (it) => run(it.done ? 'undo' : 'done', { id: it.id }),
-              onRemove: (it) => run('remove', { id: it.id }),
-              onArchive: (it) => run('archive', { id: it.id }),
-            }))),
+            h('div', { style: S.groupLabel },
+              t(BUCKET_LABEL[key]),
+              h('span', { style: S.groupCount }, list.length)),
+            list.map((item) =>
+              h(Row, {
+                key: item.id,
+                item,
+                today,
+                t,
+                onToggle: (it) => run(it.done ? 'undo' : 'done', { id: it.id }),
+                onRemove: (it) => run('remove', { id: it.id }),
+                onArchive: (it) => run('archive', { id: it.id }),
+              }))),
         )
       }
 
+      const subtitleParts = [`${stats.active} ${t('active')}`]
+      if (stats.overdue > 0) subtitleParts.push(`${stats.overdue} ${t('overdueCount')}`)
+
       return h('div', { style: S.panel },
-        h('div', { style: S.page },
-          h('div', { style: S.header },
-            h('h1', { style: S.h1 }, t('title')),
-            h('span', { style: S.stats }, `${t('active')} ${stats.active}${stats.overdue ? ` · ${t('overdue')} ${stats.overdue}` : ''}`)),
+        h('div', { style: S.inner },
+          h('div', { style: S.head },
+            h('div', { style: S.titleWrap },
+              h('div', { style: S.badge }, h(TallyGlyph, { size: 19 })),
+              h('div', null,
+                h('h1', { style: S.h1 }, t('title')),
+                h('p', { style: S.sub }, subtitleParts.join(' · ')))),
+            done.length
+              ? h('button', {
+                  type: 'button',
+                  style: S.ghostBtn,
+                  onClick: () => setShowDone((v) => !v),
+                }, `${showDone ? t('hideDone') : t('showDone')} ${done.length}`)
+              : null),
           h('div', { style: S.composer },
             h('input', {
               style: S.input,
               value: draft,
               placeholder: t('addPlaceholder'),
               onChange: (e) => setDraft(e.target.value),
-              onKeyDown: (e) => { if (e.key === 'Enter') submit() },
+              onKeyDown: (e) => {
+                if (e.key === 'Enter') submit()
+              },
               'aria-label': t('addPlaceholder'),
             }),
-            h('button', { type: 'button', style: { ...S.addBtn, opacity: busy ? 0.6 : 1 }, onClick: submit }, '+')),
-          error ? h('div', { style: { color: '#c0392b', fontSize: 13, marginBottom: 12 } }, error) : null,
-          !state ? h('div', { style: S.empty }, '…') : null,
-          state && !items.filter((i) => !i.done).length ? h('div', { style: S.empty }, t('empty')) : null,
+            h('button', {
+              type: 'button',
+              style: { ...S.addBtn, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' },
+              onClick: submit,
+              disabled: busy,
+            }, t('add'))),
+          error ? h('p', { style: S.err }, error) : null,
+          state && openCount === 0 && !done.length
+            ? h('div', { style: S.empty },
+                h('div', { style: { opacity: 0.4 } }, h(TallyGlyph, { size: 40 })),
+                h('div', { style: S.emptyTitle }, t('emptyTitle')),
+                h('div', { style: S.emptyHint }, t('emptyHint')))
+            : null,
           sections,
           done.length
             ? h('div', null,
-                h('button', { type: 'button', style: S.toggleDone, onClick: () => setShowDone((v) => !v) },
-                  `${showDone ? t('hideDone') : t('showDone')} (${done.length})`),
+                h('div', { style: S.groupLabel, marginTop: 22 },
+                  t('done'),
+                  h('span', { style: S.groupCount }, done.length)),
                 showDone
-                  ? h('div', null,
-                      h('div', { style: S.groupTitle }, t('done')),
-                      done.map((item) => h(Row, {
-                        key: item.id, item, today,
+                  ? done.map((item) =>
+                      h(Row, {
+                        key: item.id,
+                        item,
+                        today,
+                        t,
                         onToggle: (it) => run('undo', { id: it.id }),
                         onRemove: (it) => run('remove', { id: it.id }),
                         onArchive: (it) => run('archive', { id: it.id }),
-                      })))
+                      }))
                   : null)
             : null,
-        ))
+        ),
+      )
     }
 
     // ------------------------------------------------------------------ apply
+
+    const guard = (name, render) =>
+      function Guarded(props) {
+        try {
+          return render(props)
+        } catch (error) {
+          report(`render:error:${name}`, error && error.stack ? error.stack : error)
+          return h('span', { style: { fontSize: 11, opacity: 0.7 } }, '!')
+        }
+      }
 
     return {
       inject: ['slots', 'layout'],
       apply(ctx) {
         boundCtx = ctx
         ctx.slots.inject('sidebar.panellist', () =>
-          ctx.slots.register({ name: 'sidebar.panellist', id: 'todo', order: 20, label: '待办' }, SidebarEntry))
+          ctx.slots.register({ name: 'sidebar.panellist', id: 'todo', order: 20, label: '待办' }, guard('panellist', SidebarEntry)))
         ctx.slots.inject('main', () =>
-          ctx.slots.register({ name: 'main', key: 'todo' }, TodoPanel))
+          ctx.slots.register({ name: 'main', key: 'todo' }, guard('main', TodoPanel)))
+        ctx.slots.inject('conversation.composer.dock', () =>
+          ctx.slots.register({ name: 'conversation.composer.dock', id: 'todo-dock', order: 90 }, guard('dock', DockChip)))
       },
     }
   },

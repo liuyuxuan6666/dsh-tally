@@ -6,7 +6,8 @@
  * Everything that mutates state goes through one promise chain so two
  * sessions cannot interleave a read-modify-write.
  */
-import { mkdir, readFile, rename, writeFile, copyFile, access } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile, copyFile } from 'node:fs/promises'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -378,6 +379,16 @@ async function dispatch(op, payload) {
   }
 }
 
+
+/** TEMP diagnostic sink for the client half. */
+async function appendClientLog(entry) {
+  try {
+    await mkdir(DIR, { recursive: true })
+    const line = JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n'
+    await writeFile(join(DIR, 'clientlog.ndjson'), line, { flag: 'a' })
+  } catch {}
+}
+
 // --------------------------------------------------------------------- tools
 
 const JSON_OBJECT = { type: 'object', additionalProperties: true }
@@ -434,6 +445,35 @@ function formatList(result) {
 }
 
 export function apply(ctx) {
+  // TEMP diagnostic: dump the web client-module graph so a missing panel can be
+  // explained from the host side instead of the browser console.
+  try {
+    const cm = ctx.get('clientModules')
+    if (cm && typeof cm.graph === 'function') {
+      const g = cm.graph()
+      const rows = (g && g.entries) || []
+      const mine = rows.filter((r) => JSON.stringify(r).includes('dsh-tally'))
+      const diagnostic = {
+        at: new Date().toISOString(),
+        graphKeys: g ? Object.keys(g) : null,
+        rowCount: rows.length,
+        mine,
+        minePath: typeof cm.clientPath === 'function' ? cm.clientPath('dsh-tally') : 'no clientPath',
+        mineBaseline: typeof cm.artifactBaseline === 'function' ? cm.artifactBaseline('dsh-tally') : 'no baseline',
+        firstRows: rows.slice(0, 3),
+      }
+      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify(diagnostic, null, 2))
+    } else {
+      mkdirSync(DIR, { recursive: true })
+      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify({ error: 'no clientModules service', has: Boolean(cm) }, null, 2))
+    }
+  } catch (error) {
+    try {
+      mkdirSync(DIR, { recursive: true })
+      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify({ error: String(error && error.message ? error.message : error) }, null, 2))
+    } catch {}
+  }
+
   // ---- tools -------------------------------------------------------------
   ctx.effect(() =>
     ctx.tools.register(
@@ -551,37 +591,71 @@ export function apply(ctx) {
 
   // ---- HTTP API for the panel -------------------------------------------
   ctx.inject(['webServer'], (inner) => {
+    // A handler route, not a resource: resource routes answer GET/HEAD only and
+    // return 405 for every other method, which would block every write.
     inner.effect(() =>
       inner.webServer.register({
         kind: 'prefix',
         path: '/api/todo',
-        async resource(request) {
-          const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-          const host = request.headers.get('host') ?? ''
+        async handler(req, res) {
+          const send = (status, payload) => {
+            const body = JSON.stringify(payload)
+            res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            res.end(body)
+          }
+          const host = String(req.headers.host ?? '')
           if (!/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) {
-            return new Response('forbidden', { status: 403 })
+            send(403, { ok: false, error: 'forbidden' })
+            return
           }
-          if (url.pathname === '/api/todo/state') {
-            if (request.method !== 'GET') return new Response('method not allowed', { status: 405 })
-            const result = await dispatch('list', { scope: 'all', includeArchived: true, includeDone: true })
-            return Response.json(result)
+          const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+          const readJson = async () => {
+            const chunks = []
+            for await (const chunk of req) chunks.push(chunk)
+            if (!chunks.length) return {}
+            return JSON.parse(Buffer.concat(chunks).toString('utf8'))
           }
-          if (url.pathname === '/api/todo/op') {
-            if (request.method !== 'POST') return new Response('method not allowed', { status: 405 })
-            let body = {}
-            try {
-              body = await request.json()
-            } catch {
-              return Response.json({ ok: false, error: 'invalid json' }, { status: 400 })
+          try {
+            if (url.pathname === '/api/todo/state') {
+              if (req.method !== 'GET' && req.method !== 'HEAD') {
+                res.setHeader('allow', 'GET, HEAD')
+                send(405, { ok: false, error: 'method not allowed' })
+                return
+              }
+              send(200, await dispatch('list', { scope: 'all', includeArchived: true, includeDone: true }))
+              return
             }
-            try {
-              const value = await dispatch(body.op, body)
-              return Response.json({ ok: true, value })
-            } catch (error) {
-              return Response.json({ ok: false, error: String(error?.message ?? error) }, { status: 200 })
+            if (url.pathname === '/api/todo/op') {
+              if (req.method !== 'POST') {
+                res.setHeader('allow', 'POST')
+                send(405, { ok: false, error: 'method not allowed' })
+                return
+              }
+              let body = {}
+              try {
+                body = await readJson()
+              } catch {
+                send(400, { ok: false, error: 'invalid json' })
+                return
+              }
+              try {
+                send(200, { ok: true, value: await dispatch(body.op, body) })
+              } catch (error) {
+                send(200, { ok: false, error: String(error?.message ?? error) })
+              }
+              return
             }
+            if (url.pathname === '/api/todo/clientlog') {
+              const stage = url.searchParams.get('stage') ?? 'unknown'
+              const detail = url.searchParams.get('detail')
+              await appendClientLog({ stage, detail, method: req.method })
+              send(200, { ok: true })
+              return
+            }
+            send(404, { ok: false, error: 'not found' })
+          } catch (error) {
+            send(500, { ok: false, error: String(error?.message ?? error) })
           }
-          return new Response('not found', { status: 404 })
         },
       }),
     )
