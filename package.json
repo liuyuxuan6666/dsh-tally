@@ -45,5 +45,8 @@
   "bugs": {
     "url": "https://github.com/liuyuxuan6666/dsh-tally/issues"
   },
-  "author": "lyx6666"
+  "author": "lyx6666",
+  "scripts": {
+    "test": "node scripts/smoke.mjs"
+  }
 }
