@@ -84,3 +84,25 @@ Agent 只能改状态，**不能代替你做"验收"**——这里没有验收�
 - 工具写入 → JSON 文件 → HTTP API 三端一致
 - 状态流转：add / update / done / undo / archive / unarchive / remove / export
 - 归档后不再出现在默认列表，`scope="archived"` 可查
+
+## 开发与部署
+
+仓库在 WSL：`/home/user/code-dsh/dsh-tally`。DSH 跑在 Windows，插件必须从 Windows 本地路径安装——`/` 的 UNC 链接装不成 profile bundle，所以分两步：
+
+```bash
+./scripts/sync.sh        # 同步到 Windows 部署镜像
+```
+
+然后用 `plugin_manager install_bundle` 指向镜像目录 `/mnt/c/Users/user/Documents/deepseek-harness/default-workspace/dsh-tally`。
+
+| 改动 | 生效方式 |
+|---|---|
+| Host（index.js） | `remove_bundle` → `install_bundle`（ESM 模块缓存，只重装不重启也能生效） |
+| Client（client.js） | 必须重启 DSH（client bundle 只在 boot 时扫描） |
+| 只改数据/配置 | 无需重装 |
+
+### 打包
+
+```bash
+npm pack --pack-destination /tmp
+```
