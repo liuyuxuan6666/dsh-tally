@@ -7,7 +7,6 @@
  * sessions cannot interleave a read-modify-write.
  */
 import { mkdir, readFile, rename, writeFile, copyFile } from 'node:fs/promises'
-import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -380,7 +379,7 @@ async function dispatch(op, payload) {
 }
 
 
-/** TEMP diagnostic sink for the client half. */
+/** Append one client-side render report. Loopback-only, append-only. */
 async function appendClientLog(entry) {
   try {
     await mkdir(DIR, { recursive: true })
@@ -445,36 +444,6 @@ function formatList(result) {
 }
 
 export function apply(ctx) {
-  // TEMP diagnostic: dump the web client-module graph so a missing panel can be
-  // explained from the host side instead of the browser console.
-  try {
-    const cm = ctx.get('clientModules')
-    if (cm && typeof cm.graph === 'function') {
-      const g = cm.graph()
-      const rows = (g && g.entries) || []
-      const mine = rows.filter((r) => JSON.stringify(r).includes('dsh-tally'))
-      const diagnostic = {
-        at: new Date().toISOString(),
-        graphKeys: g ? Object.keys(g) : null,
-        rowCount: rows.length,
-        mine,
-        minePath: typeof cm.clientPath === 'function' ? cm.clientPath('dsh-tally') : 'no clientPath',
-        mineBaseline: typeof cm.artifactBaseline === 'function' ? cm.artifactBaseline('dsh-tally') : 'no baseline',
-        firstRows: rows.slice(0, 3),
-      }
-      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify(diagnostic, null, 2))
-    } else {
-      mkdirSync(DIR, { recursive: true })
-      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify({ error: 'no clientModules service', has: Boolean(cm) }, null, 2))
-    }
-  } catch (error) {
-    try {
-      mkdirSync(DIR, { recursive: true })
-      writeFileSync(join(DIR, 'client-graph.json'), JSON.stringify({ error: String(error && error.message ? error.message : error) }, null, 2))
-    } catch {}
-  }
-
-  // ---- tools -------------------------------------------------------------
   ctx.effect(() =>
     ctx.tools.register(
       tool(
