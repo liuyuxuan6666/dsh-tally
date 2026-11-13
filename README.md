@@ -8,6 +8,7 @@
 
 一个侧栏图标、一个单列面板、十一个工具。数据只有一个 JSON 文件，不联网，不同步，不打扰。
 
+[![ci](https://github.com/liuyuxuan6666/dsh-tally/actions/workflows/ci.yml/badge.svg)](https://github.com/liuyuxuan6666/dsh-tally/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/liuyuxuan6666/dsh-tally?color=blue)](LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-0.2.x-1c5a40)](https://github.com/deepseek-ai/deepseek-harness)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.19-339933)](https://nodejs.org)
